@@ -17,6 +17,8 @@ import {
   Hash,
   Paperclip,
   X,
+  Check,
+  Cloud,
 } from "lucide-react";
 
 const TextEditor = dynamic(() => import("./components/TextEditor"), {
@@ -37,10 +39,13 @@ export default function Home() {
   const [sending, setSending] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [attachments, setAttachments] = useState([]);
+  const [lastSaved, setLastSaved] = useState(null);
+  const [saveTimer, setSaveTimer] = useState(null);
 
-  // Load saved SMTP config from localStorage on mount
+  // Load all saved data from localStorage on mount
   useEffect(() => {
     if (typeof window !== "undefined") {
+      // Load SMTP config
       const savedConfig = localStorage.getItem("smtpConfig");
       if (savedConfig) {
         try {
@@ -54,8 +59,36 @@ export default function Home() {
           console.error("Failed to load SMTP config:", e);
         }
       }
+
+      // Load recipients
+      const savedRecipients = localStorage.getItem("recipients");
+      if (savedRecipients) {
+        try {
+          const recipients = JSON.parse(savedRecipients);
+          if (recipients.length > 0) setRecipients(recipients);
+        } catch (e) {
+          console.error("Failed to load recipients:", e);
+        }
+      }
+
+      // Load email template
+      const savedSubject = localStorage.getItem("emailSubject");
+      const savedTemplate = localStorage.getItem("emailTemplate");
+      if (savedSubject) setSubject(savedSubject);
+      if (savedTemplate) setTemplate(savedTemplate);
     }
   }, []);
+
+  // Helper function to save data with debounce
+  const saveData = () => {
+    if (saveTimer) clearTimeout(saveTimer);
+
+    const timer = setTimeout(() => {
+      setLastSaved(new Date());
+    }, 1000); // Wait 1 second after user stops typing
+
+    setSaveTimer(timer);
+  };
 
   // Save SMTP config to localStorage whenever it changes
   useEffect(() => {
@@ -68,8 +101,26 @@ export default function Home() {
         smtpPort,
       };
       localStorage.setItem("smtpConfig", JSON.stringify(config));
+      saveData();
     }
   }, [senderName, smtpUser, smtpPass, smtpHost, smtpPort]);
+
+  // Save recipients to localStorage whenever they change
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("recipients", JSON.stringify(recipients));
+      saveData();
+    }
+  }, [recipients]);
+
+  // Save email subject and template to localStorage whenever they change
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (subject) localStorage.setItem("emailSubject", subject);
+      if (template) localStorage.setItem("emailTemplate", template);
+      saveData();
+    }
+  }, [subject, template]);
 
   const addRecipient = () => {
     setRecipients([...recipients, { name: "", email: "", company: "" }]);
@@ -214,6 +265,17 @@ export default function Home() {
   return (
     <>
       <Toaster position="top-right" />
+
+      {/* Saved Indicator - Always visible */}
+      {lastSaved && (
+        <div className="fixed bottom-6 right-6 flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg shadow-md z-50">
+          <Cloud className="w-3.5 h-3.5 text-gray-600" />
+          <span className="text-xs text-gray-600">
+            Saved locally at {lastSaved.toLocaleTimeString()}
+          </span>
+        </div>
+      )}
+
       <div className="min-h-screen bg-white">
         {/* Header */}
         <div className="border-b border-gray-200 bg-white sticky top-0 z-10">

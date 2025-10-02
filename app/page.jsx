@@ -41,6 +41,10 @@ export default function Home() {
   const [attachments, setAttachments] = useState([]);
   const [lastSaved, setLastSaved] = useState(null);
   const [saveTimer, setSaveTimer] = useState(null);
+  const [googleSheetsEnabled, setGoogleSheetsEnabled] = useState(false);
+  const [spreadsheetId, setSpreadsheetId] = useState("");
+  const [serviceAccountEmail, setServiceAccountEmail] = useState("");
+  const [privateKey, setPrivateKey] = useState("");
 
   // Load all saved data from localStorage on mount
   useEffect(() => {
@@ -76,6 +80,20 @@ export default function Home() {
       const savedTemplate = localStorage.getItem("emailTemplate");
       if (savedSubject) setSubject(savedSubject);
       if (savedTemplate) setTemplate(savedTemplate);
+
+      // Load Google Sheets config
+      const savedGoogleSheets = localStorage.getItem("googleSheetsConfig");
+      if (savedGoogleSheets) {
+        try {
+          const config = JSON.parse(savedGoogleSheets);
+          if (config.enabled !== undefined) setGoogleSheetsEnabled(config.enabled);
+          if (config.spreadsheetId) setSpreadsheetId(config.spreadsheetId);
+          if (config.serviceAccountEmail) setServiceAccountEmail(config.serviceAccountEmail);
+          if (config.privateKey) setPrivateKey(config.privateKey);
+        } catch (e) {
+          console.error("Failed to load Google Sheets config:", e);
+        }
+      }
     }
   }, []);
 
@@ -122,6 +140,20 @@ export default function Home() {
     }
   }, [subject, template]);
 
+  // Save Google Sheets config to localStorage whenever it changes
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const config = {
+        enabled: googleSheetsEnabled,
+        spreadsheetId,
+        serviceAccountEmail,
+        privateKey,
+      };
+      localStorage.setItem("googleSheetsConfig", JSON.stringify(config));
+      saveData();
+    }
+  }, [googleSheetsEnabled, spreadsheetId, serviceAccountEmail, privateKey]);
+
   const addRecipient = () => {
     setRecipients([...recipients, { name: "", email: "", company: "" }]);
     toast.success("Recipient added");
@@ -136,6 +168,19 @@ export default function Home() {
   const removeRecipient = (index) => {
     setRecipients(recipients.filter((_, i) => i !== index));
     toast.success("Recipient removed");
+  };
+
+  const deleteAllRecipients = () => {
+    if (recipients.length === 0) {
+      toast.error("No recipients to delete");
+      return;
+    }
+
+    const count = recipients.length;
+    if (window.confirm(`Are you sure you want to delete all ${count} recipient(s)? This action cannot be undone.`)) {
+      setRecipients([{ name: "", email: "", company: "" }]);
+      toast.success(`Deleted ${count} recipient(s)`);
+    }
   };
 
   const handleFileChange = (e) => {
@@ -219,6 +264,12 @@ export default function Home() {
             pass: smtpPass,
             senderName: senderName,
           },
+          googleSheetsConfig: googleSheetsEnabled ? {
+            enabled: true,
+            spreadsheetId,
+            serviceAccountEmail,
+            privateKey,
+          } : null,
         }),
       });
 
@@ -309,66 +360,130 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-6 py-8">
           {/* SMTP Configuration - Collapsible */}
           {showConfig && (
-            <div className="mb-6 p-5 bg-gray-50 border border-gray-200 rounded-xl">
-              <div className="flex items-center gap-2 mb-4">
-                <Server className="w-5 h-5 text-gray-700" />
-                <h2 className="text-sm font-medium text-gray-900">
-                  SMTP Configuration
-                </h2>
+            <>
+              <div className="mb-6 p-5 bg-gray-50 border border-gray-200 rounded-xl">
+                <div className="flex items-center gap-2 mb-4">
+                  <Server className="w-5 h-5 text-gray-700" />
+                  <h2 className="text-sm font-medium text-gray-900">
+                    SMTP Configuration
+                  </h2>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Your Name (e.g., Anurag Roshan)"
+                      value={senderName}
+                      onChange={(e) => setSenderName(e.target.value)}
+                      className="w-full pl-10 pr-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                  <div className="relative">
+                    <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="email"
+                      placeholder="Your Email"
+                      value={smtpUser}
+                      onChange={(e) => setSmtpUser(e.target.value)}
+                      className="w-full pl-10 pr-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="password"
+                      placeholder="App Password"
+                      value={smtpPass}
+                      onChange={(e) => setSmtpPass(e.target.value)}
+                      className="w-full pl-10 pr-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                  <div className="relative">
+                    <Server className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="smtp.gmail.com"
+                      value={smtpHost}
+                      onChange={(e) => setSmtpHost(e.target.value)}
+                      className="w-full pl-10 pr-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                  <div className="relative">
+                    <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Port (587)"
+                      value={smtpPort}
+                      onChange={(e) => setSmtpPort(e.target.value)}
+                      className="w-full pl-10 pr-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Your Name (e.g., Anurag Roshan)"
-                    value={senderName}
-                    onChange={(e) => setSenderName(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                  />
+
+              {/* Google Sheets Configuration */}
+              <div className="mb-6 p-5 bg-gray-50 border border-gray-200 rounded-xl">
+                <div className="flex items-center gap-2 mb-4">
+                  <FileText className="w-5 h-5 text-gray-700" />
+                  <h2 className="text-sm font-medium text-gray-900">
+                    Google Sheets Integration (Optional)
+                  </h2>
+                  <label className="ml-auto flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={googleSheetsEnabled}
+                      onChange={(e) => setGoogleSheetsEnabled(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-xs text-gray-600">Enable</span>
+                  </label>
                 </div>
-                <div className="relative">
-                  <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="email"
-                    placeholder="Your Email"
-                    value={smtpUser}
-                    onChange={(e) => setSmtpUser(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                  />
-                </div>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="password"
-                    placeholder="App Password"
-                    value={smtpPass}
-                    onChange={(e) => setSmtpPass(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                  />
-                </div>
-                <div className="relative">
-                  <Server className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="smtp.gmail.com"
-                    value={smtpHost}
-                    onChange={(e) => setSmtpHost(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                  />
-                </div>
-                <div className="relative">
-                  <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Port (587)"
-                    value={smtpPort}
-                    onChange={(e) => setSmtpPort(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                  />
-                </div>
+                {googleSheetsEnabled && (
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Spreadsheet ID (from URL)"
+                        value={spreadsheetId}
+                        onChange={(e) => setSpreadsheetId(e.target.value)}
+                        className="w-full pl-10 pr-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                      />
+                    </div>
+                    <div className="relative">
+                      <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="email"
+                        placeholder="Service Account Email"
+                        value={serviceAccountEmail}
+                        onChange={(e) => setServiceAccountEmail(e.target.value)}
+                        className="w-full pl-10 pr-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                      />
+                    </div>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+                      <textarea
+                        placeholder="Private Key (from service account JSON)"
+                        value={privateKey}
+                        onChange={(e) => setPrivateKey(e.target.value)}
+                        rows={3}
+                        className="w-full pl-10 pr-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
+                      />
+                    </div>
+                    <div className="text-xs text-gray-500 bg-blue-50 p-3 rounded-lg">
+                      <p className="font-medium mb-1">Setup Instructions:</p>
+                      <ol className="list-decimal list-inside space-y-1">
+                        <li>Create a Google Cloud project and enable Sheets API</li>
+                        <li>Create a service account and download the JSON key</li>
+                        <li>Share your Google Sheet with the service account email</li>
+                        <li>Copy the spreadsheet ID from the URL</li>
+                      </ol>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
+            </>
           )}
 
           {/* Email Template - Compact */}
@@ -442,13 +557,22 @@ export default function Home() {
                   Recipients ({recipients.length})
                 </h2>
               </div>
-              <button
-                onClick={addRecipient}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                Add
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={deleteAllRecipients}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete All
+                </button>
+                <button
+                  onClick={addRecipient}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  Add
+                </button>
+              </div>
             </div>
 
             <div className="space-y-2">

@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
+import { appendToGoogleSheet } from "../../utils/googleSheets";
 
 export async function POST(request) {
   try {
-    const { recipients, template, smtpConfig, attachments } = await request.json();
+    const { recipients, template, smtpConfig, attachments, googleSheetsConfig } = await request.json();
 
     // Create transporter
     const transporter = nodemailer.createTransport({
@@ -55,13 +56,34 @@ export async function POST(request) {
 
         await transporter.sendMail(mailOptions);
 
-        results.push({ email: recipient.email, status: "sent" });
+        results.push({
+          email: recipient.email,
+          name: recipient.name,
+          company: recipient.company,
+          status: "sent",
+          subject: personalizedSubject,
+          sentAt: new Date().toISOString()
+        });
       } catch (error) {
         results.push({
           email: recipient.email,
+          name: recipient.name,
+          company: recipient.company,
           status: "failed",
           error: error instanceof Error ? error.message : "Unknown error",
+          subject: template.subject,
+          sentAt: new Date().toISOString()
         });
+      }
+    }
+
+    // Log to Google Sheets if configured
+    if (googleSheetsConfig && googleSheetsConfig.enabled && googleSheetsConfig.spreadsheetId) {
+      try {
+        await appendToGoogleSheet(googleSheetsConfig, results);
+      } catch (sheetError) {
+        console.error('Failed to log to Google Sheets:', sheetError);
+        // Don't fail the whole request if Google Sheets logging fails
       }
     }
 
